@@ -7,6 +7,7 @@ const registerDatabase = require("./plugins/db");
 const payoutRequestRoutes = require("./routes/payoutRequests");
 const otpRoutes = require("./routes/otp");
 const authRoutes = require("./routes/auth");
+const invitesRoutes = require("./routes/invites");
 
 async function buildApp() {
   const app = fastify({
@@ -78,6 +79,7 @@ async function buildApp() {
   await app.register(authRoutes, { prefix: "/api/auth" });
   await app.register(payoutRequestRoutes, { prefix: "/api/payout-requests" });
   await app.register(otpRoutes, { prefix: "/api/otp" });
+  await app.register(invitesRoutes, { prefix: "/api" });
 
   return app;
 }

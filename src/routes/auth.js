@@ -21,8 +21,8 @@ async function authRoutes(app) {
           properties: {
             email: { type: "string", format: "email" },
             password: { type: "string", minLength: 8 },
-            firstName: { type: "string", minLength: 1 },
-            lastName: { type: "string", minLength: 1 },
+            firstName: { type: "string" },
+            lastName: { type: "string" },
             phone: { type: "string" },
           },
         },
@@ -39,8 +39,8 @@ async function authRoutes(app) {
       const user = await createUser(app.pg, {
         email,
         password,
-        firstName,
-        lastName,
+        firstName: firstName || null,
+        lastName: lastName || null,
         phone,
         role: "staff", // Default role for regular users
       });
@@ -534,6 +534,28 @@ async function authRoutes(app) {
       });
     },
   );
+
+  // Check if email exists (public endpoint)
+  app.get("/check-email", {
+    schema: {
+      querystring: {
+        type: "object",
+        required: ["email"],
+        properties: {
+          email: { type: "string", format: "email" },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    try {
+      const { email } = request.query;
+      const user = await findUserByEmail(app.pg, email);
+      return reply.send({ exists: !!user });
+    } catch (error) {
+      request.log.error({ err: error }, "Failed to check email");
+      return reply.code(500).send({ message: "Failed to check email", exists: false });
+    }
+  });
 }
 
 module.exports = authRoutes;

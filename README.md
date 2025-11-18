@@ -1,3 +1,145 @@
+# HissabBook API System
+
+Backend API system for HissabBook - a CashBook-style accounting/ledger application.
+
+## Quick Start
+
+1. **Install Dependencies**
+   ```bash
+   npm install
+   ```
+
+2. **Configure Environment Variables**
+   - Copy `.env.example` to `.env` (if available)
+   - Set up your database connection: `DATABASE_URL`
+   - Set up JWT secret: `JWT_SECRET`
+   - Set up Gmail SMTP for email OTP: See [GMAIL_SETUP.md](./GMAIL_SETUP.md)
+   - Set up Fast2SMS for mobile OTP: `FAST2SMS_API_KEY`
+
+3. **Run Database Migrations**
+   - Execute SQL migration files from `data/migrations/` directory
+
+4. **Start the Server**
+   ```bash
+   npm start
+   # or for development
+   npm run dev
+   ```
+
+## Gmail SMTP Setup
+
+For email OTP functionality, you need to configure Gmail SMTP. See the detailed guide in [GMAIL_SETUP.md](./GMAIL_SETUP.md).
+
+**Quick Setup:**
+1. Enable 2-Step Verification on your Google Account
+2. Generate an App Password for Gmail
+3. Add to your `.env` file:
+   ```env
+   SMTP_USER=your-email@gmail.com
+   SMTP_PASSWORD=your-16-character-app-password
+   SMTP_FROM_EMAIL=your-email@gmail.com
+   ```
+
+## API Endpoints
+
+### Authentication
+- `POST /api/auth/register` - Register with email/password
+- `POST /api/auth/login` - Login with email/password
+- `POST /api/auth/create-user` - Create/login user after email OTP verification
+- `GET /api/auth/me` - Get current user (requires auth)
+- `POST /api/auth/logout` - Logout (requires auth)
+
+### OTP (One-Time Password)
+- `POST /api/otp/request` - Send OTP to mobile number
+- `POST /api/otp/verify` - Verify mobile OTP
+- `POST /api/otp/email/request` - Send OTP to email address
+- `POST /api/otp/email/verify` - Verify email OTP
+
+### Payout Requests
+- `POST /api/payout-requests` - Create payout request
+- `GET /api/payout-requests` - Get payout requests (requires auth)
+
+## Environment Variables
+
+See `.env.example` for all available environment variables.
+
+**Required:**
+- `DATABASE_URL` - PostgreSQL connection string
+- `JWT_SECRET` - Secret key for JWT tokens
+- `SMTP_USER` or `GMAIL_USER` - Gmail email address
+- `SMTP_PASSWORD` or `GMAIL_APP_PASSWORD` - Gmail App Password
+
+**Optional:**
+- `SMTP_HOST` - SMTP host (default: smtp.gmail.com)
+- `SMTP_PORT` - SMTP port (default: 587)
+- `SMTP_SECURE` - Use SSL/TLS (default: false for port 587)
+- `OTP_TTL_MINUTES` - OTP expiration time in minutes (default: 5)
+- `FAST2SMS_API_KEY` - Fast2SMS API key for mobile OTP
+- `JWT_EXPIRES_IN` - JWT token expiration (default: 1h)
+
+## Project Structure
+
+```
+hissabbook-api-system/
+├── src/
+│   ├── app.js              # Fastify app configuration
+│   ├── server.js           # Server startup
+│   ├── plugins/
+│   │   └── db.js           # Database plugin
+│   ├── routes/
+│   │   ├── auth.js         # Authentication routes
+│   │   ├── otp.js          # OTP routes (mobile & email)
+│   │   └── payoutRequests.js
+│   ├── services/
+│   │   └── userService.js  # User service
+│   └── utils/
+│       ├── email.js        # Email utility (Gmail SMTP)
+│       └── password.js     # Password hashing utility
+├── GMAIL_SETUP.md          # Gmail SMTP setup guide
+└── package.json
+```
+
+## Features
+
+- ✅ Email OTP authentication (passwordless)
+- ✅ Mobile OTP authentication (via Fast2SMS)
+- ✅ JWT-based authentication
+- ✅ User registration and login
+- ✅ Email OTP sending via Gmail SMTP
+- ✅ Database migrations support
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Run in development mode (with auto-reload)
+npm run dev
+
+# Run in production mode
+npm start
+```
+
+## Troubleshooting
+
+### Gmail SMTP Issues
+- See [GMAIL_SETUP.md](./GMAIL_SETUP.md) for detailed troubleshooting
+- Make sure you're using an App Password, not your regular Gmail password
+- Verify that 2-Step Verification is enabled on your Google Account
+
+### Database Issues
+- Check your `DATABASE_URL` connection string
+- Verify that PostgreSQL is running
+- Run database migrations from `data/migrations/` directory
+
+### OTP Issues
+- Check server logs for detailed error messages
+- Verify Gmail SMTP configuration for email OTP
+- Verify Fast2SMS API key for mobile OTP
+
+---
+
 # HissabBook — Scalable Architecture (React frontend + Node.js backend)
 
 This document describes a production-ready, scalable architecture for **HissabBook** (a CashBook-style accounting/ledger app). It includes high-level diagrams, component responsibilities, recommended tech choices, data model sketches, REST API design, scaling strategies, CI/CD, security and observability recommendations, and starter folder structure.
@@ -52,7 +194,7 @@ This document describes a production-ready, scalable architecture for **HissabBo
 
    * **BullMQ** (Redis-backed) or RabbitMQ for asynchronous tasks (export CSV/PDF, sending notifications, heavy computations)
 
-7. **Object Storage**
+7. **Object Storage** 
 
    * **S3-compatible** storage for invoices, backups, exports
 

@@ -121,7 +121,6 @@ async function payoutRequestRoutes(app) {
            FROM public.user_roles ur
            JOIN public.roles r ON ur.role_id = r.id
            WHERE ur.user_id = $1
-           ORDER BY ur.created_at ASC
            LIMIT 1`,
           [user.id],
         );
@@ -187,7 +186,6 @@ async function payoutRequestRoutes(app) {
                     FROM public.user_roles ur_sub
                     JOIN public.roles r ON ur_sub.role_id = r.id
                     WHERE ur_sub.user_id = u.id
-                    ORDER BY ur_sub.created_at ASC
                     LIMIT 1
                   )
                   ELSE NULL
@@ -218,7 +216,6 @@ async function payoutRequestRoutes(app) {
                     FROM public.user_roles ur_sub
                     JOIN public.roles r ON ur_sub.role_id = r.id
                     WHERE ur_sub.user_id = u.id
-                    ORDER BY ur_sub.created_at ASC
                     LIMIT 1
                   )
                   ELSE NULL
