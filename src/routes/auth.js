@@ -42,12 +42,12 @@ async function authRoutes(app) {
         firstName: firstName || null,
         lastName: lastName || null,
         phone,
-        role: "staff", // Default role for regular users
+        role: "managers", // Default role for regular users (managers are end users)
       });
 
       // Get user roles
       const roles = await getUserRoles(app.pg, user.id);
-      const primaryRole = roles[0] || "staff";
+      const primaryRole = roles[0] || "managers";
 
       const token = app.jwt.sign({
         sub: user.id,
@@ -107,7 +107,7 @@ async function authRoutes(app) {
 
       // Get user roles
       const roles = await getUserRoles(app.pg, user.id);
-      const primaryRole = roles[0] || "staff";
+      const primaryRole = roles[0] || "managers";
 
       const token = app.jwt.sign({
         sub: user.id,
@@ -145,7 +145,7 @@ async function authRoutes(app) {
     async (request) => {
       const user = await findUserByEmail(app.pg, request.user.email);
       const roles = await getUserRoles(app.pg, user.id);
-      const primaryRole = roles[0] || "staff";
+      const primaryRole = roles[0] || "managers";
       const userDetails = await getUserDetails(app.pg, user.id);
 
       // Parse metadata if it's a string
@@ -198,10 +198,11 @@ async function authRoutes(app) {
 
       // Get user roles
       const roles = await getUserRoles(app.pg, user.id);
-      const primaryRole = roles[0] || "staff";
+      const primaryRole = roles[0] || "managers";
 
       if (!userDetails) {
         return {
+          email: user.email,
           name: null,
           firstName: null,
           lastName: null,
@@ -231,6 +232,7 @@ async function authRoutes(app) {
       const fullName = [userDetails.first_name, userDetails.last_name].filter(Boolean).join(" ").trim() || null;
 
       return {
+        email: user.email,
         name: fullName,
         firstName: userDetails.first_name || null,
         lastName: userDetails.last_name || null,
@@ -337,11 +339,12 @@ async function authRoutes(app) {
 
       // Get user roles
       const roles = await getUserRoles(app.pg, user.id);
-      const primaryRole = roles[0] || "staff";
+      const primaryRole = roles[0] || "managers";
 
       return reply.send({
         success: true,
         accountDetails: {
+          email: user.email,
           name: fullName,
           firstName: updatedDetails.first_name || null,
           lastName: updatedDetails.last_name || null,
@@ -354,6 +357,61 @@ async function authRoutes(app) {
         },
       });
     },
+  );
+
+  // Change password endpoint
+  app.put(
+    "/change-password",
+    {
+      preValidation: [app.authenticate],
+      schema: {
+        body: {
+          type: "object",
+          required: ["currentPassword", "newPassword"],
+          properties: {
+            currentPassword: { type: "string", minLength: 1 },
+            newPassword: { type: "string", minLength: 8 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const user = await findUserByEmail(app.pg, request.user.email);
+        if (!user) {
+          return reply.code(404).send({ message: "User not found" });
+        }
+
+        const { currentPassword, newPassword } = request.body;
+
+        // Verify current password
+        const isValid = await verifyPassword(currentPassword, user.password_hash);
+        if (!isValid) {
+          return reply.code(401).send({ message: "Current password is incorrect" });
+        }
+
+        // Hash new password
+        const { hashPassword } = require("../utils/password");
+        const passwordHash = await hashPassword(newPassword);
+
+        // Update password
+        await app.pg.query(
+          "UPDATE public.users SET password_hash = $1, updated_at = now() WHERE id = $2",
+          [passwordHash, user.id]
+        );
+
+        return reply.send({
+          success: true,
+          message: "Password changed successfully",
+        });
+      } catch (error) {
+        request.log.error({ err: error }, "Failed to change password");
+        return reply.code(500).send({
+          message: "Failed to change password",
+          error: error.message,
+        });
+      }
+    }
   );
 
   // Create user after email OTP verification (no password required)
@@ -385,7 +443,7 @@ async function authRoutes(app) {
 
         // Get user roles
         const roles = await getUserRoles(app.pg, existing.id);
-        const primaryRole = roles[0] || "staff";
+        const primaryRole = roles[0] || "managers";
 
         const token = app.jwt.sign({
           sub: existing.id,
@@ -408,15 +466,15 @@ async function authRoutes(app) {
       }
 
       // Create new user (no password required for OTP-based auth)
-      // Default role is "staff" for users created via email OTP
+      // Default role is "managers" for users created via email OTP (managers are end users)
       const user = await createUser(app.pg, {
         email,
-        role: "staff",
+        role: "managers",
       });
 
       // Get user roles
       const roles = await getUserRoles(app.pg, user.id);
-      const primaryRole = roles[0] || "staff";
+      const primaryRole = roles[0] || "managers";
 
       const token = app.jwt.sign({
         sub: user.id,
@@ -477,7 +535,7 @@ async function authRoutes(app) {
 
         // Get user roles
         const roles = await getUserRoles(app.pg, existing.id);
-        const primaryRole = roles[0] || "staff";
+        const primaryRole = roles[0] || "managers";
 
         const token = app.jwt.sign({
           sub: existing.id,
@@ -505,12 +563,12 @@ async function authRoutes(app) {
       const user = await createUser(app.pg, {
         email: tempEmail,
         phone: formattedPhone,
-        role: "staff", // Default role for phone-based users
+        role: "managers", // Default role for phone-based users (managers are end users)
       });
 
       // Get user roles
       const roles = await getUserRoles(app.pg, user.id);
-      const primaryRole = roles[0] || "staff";
+      const primaryRole = roles[0] || "managers";
 
       const token = app.jwt.sign({
         sub: user.id,

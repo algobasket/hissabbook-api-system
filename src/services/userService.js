@@ -133,7 +133,7 @@ async function updateUserDetails(pool, userId, { firstName, lastName, phone, upi
   return result.rows[0];
 }
 
-async function createUser(pool, { email, password, firstName, lastName, phone, role = "staff" }) {
+async function createUser(pool, { email, password, firstName, lastName, phone, role = "managers" }) {
   const id = uuidv4();
   // If password is not provided (for OTP-based auth), create a random password hash
   // In production, you might want to handle OTP-only users differently
