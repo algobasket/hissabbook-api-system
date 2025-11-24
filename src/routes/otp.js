@@ -1,4 +1,5 @@
-const { fetch } = require("undici");
+const axios = require("axios");
+const qs = require("qs");
 const { sendOtpEmail } = require("../utils/email");
 
 const OTP_TTL_MINUTES = Number(process.env.OTP_TTL_MINUTES || 5);
@@ -41,9 +42,13 @@ function formatPhoneNumber(phone) {
   return cleaned;
 }
 
+
+
+
+
 async function sendOtpSms({ code, phone }) {
   const apiKey = process.env.FAST2SMS_API_KEY;
-  const otpUrl = process.env.OTP_URL || "https://www.fast2sms.com/dev/bulkV2";
+  const otpUrl = "https://www.fast2sms.com/dev/bulkV2";
   const scheduleTime = process.env.FAST2SMS_SCHEDULE_TIME || undefined;
 
   if (!apiKey) {
@@ -58,78 +63,122 @@ async function sendOtpSms({ code, phone }) {
     throw new Error(`Phone number validation failed: ${error.message}`);
   }
 
-  const payload = {
-    route: "otp",
-    variables_values: code,
-    numbers: formattedPhone,
-  };
-
-  if (scheduleTime) {
-    payload.schedule_time = scheduleTime;
+  // Fast2SMS route "q" expects 10-digit number for Indian numbers
+  // Extract last 10 digits if the number starts with 91 (Indian country code)
+  let phoneForSms = formattedPhone;
+  if (formattedPhone.startsWith("91") && formattedPhone.length === 12) {
+    phoneForSms = formattedPhone.substring(2); // Remove "91" prefix, keep last 10 digits
+  } else if (formattedPhone.length > 10) {
+    // For other countries, take last 10 digits
+    phoneForSms = formattedPhone.substring(formattedPhone.length - 10);
   }
 
-  // Log request details (without API key) for debugging
-  const requestPayload = {
-    route: payload.route,
-    variables_values: payload.variables_values,
-    numbers: formattedPhone,
-    schedule_time: payload.schedule_time,
+  // Build query parameters exactly matching the working test-sms.js script
+  const params = {
+    authorization: apiKey,
+    route: "q",
+    message: code,
+    numbers: phoneForSms,
+    schedule_time: scheduleTime || "",
+    flash: "0",
   };
 
-  const response = await fetch(otpUrl, {
-    method: "POST",
-    headers: {
-      authorization: apiKey,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  // Read response body
-  const responseText = await response.text();
-  let data;
+  // Log request details for debugging
+  console.log("=== Fast2SMS Request Debug ===");
+  console.log("Phone (original):", phone);
+  console.log("Phone (formatted):", formattedPhone);
+  console.log("Phone (for SMS - 10 digits):", phoneForSms);
+  console.log("OTP Code:", code);
+  console.log("URL:", otpUrl);
+  console.log("Params (without API key):", { ...params, authorization: "***" });
   
+  const requestPayload = {
+    route: "q",
+    message: code,
+    numbers: phoneForSms,  
+    schedule_time: scheduleTime || "",
+    flash: "0"
+  }; 
+
+  // Use axios.get with qs.stringify exactly like test-sms.js
+  let data;
   try {
-    data = JSON.parse(responseText);
-  } catch (parseError) {
-    // If response is not JSON, throw error with raw text
-    const error = new Error(
-      `Fast2SMS request failed with status ${response.status}. Response: ${responseText.substring(0, 500)}`,
-    );
-    error.requestPayload = requestPayload;
-    error.responseText = responseText;
-    throw error;
+    const response = await axios.get(otpUrl, {
+      params: params,
+      paramsSerializer: params => qs.stringify(params),
+    });
+    
+    data = response.data;
+    
+    console.log("=== Fast2SMS Response Debug ===");
+    console.log("HTTP Status:", response.status, response.statusText);
+    console.log("Response Data:", JSON.stringify(data, null, 2));
+  } catch (error) {
+    // Handle axios errors - Fast2SMS might return error details in response
+    console.error("=== Fast2SMS Error ===");
+    console.error("Error:", error.message);
+    if (error.response) {
+      console.error("Response Status:", error.response.status);
+      console.error("Response Data:", JSON.stringify(error.response.data, null, 2));
+      data = error.response.data;
+      // Don't throw immediately - check if data.return indicates failure
+    } else {
+      // Network error or no response
+      const errorMsg = `Fast2SMS request failed: ${error.message}`;
+      console.error(errorMsg);
+      throw new Error(errorMsg);
+    }
   }
 
-  if (!response.ok) {
-    // Extract error message from Fast2SMS response
-    const errorMessage = data.message
+  // Log detailed response analysis
+  if (data) {
+    console.log("Response Analysis:");
+    console.log("- return:", data.return);
+    console.log("- request_id:", data.request_id);
+    console.log("- message:", data.message);
+    console.log("- status_code:", data.status_code);
+  }
+
+  // Fast2SMS API returns success when data.return is true
+  // Check if the response indicates success
+  if (!data || data.return === false) {
+    const errorMessage = data?.message
       ? Array.isArray(data.message)
         ? data.message.join(", ")
         : data.message
-      : data.status_code
-        ? `Error code: ${data.status_code}`
-        : data.request_id
-          ? `Request ID: ${data.request_id}`
-          : responseText || "Unknown error";
+      : "Fast2SMS returned false or no response";
     
-    const error = new Error(
-      `Fast2SMS request failed with status ${response.status}: ${errorMessage}`,
-    );
-    error.requestPayload = requestPayload;
-    error.responseData = data;
-    error.statusCode = response.status;
-    throw error;
+    console.error("Fast2SMS Error:", errorMessage);
+    throw new Error(`Fast2SMS error: ${errorMessage}`);
   }
 
-  if (!data.return) {
-    throw new Error(
-      `Fast2SMS error: ${Array.isArray(data.message) ? data.message.join(", ") : data.message || "Unknown error"}`,
-    );
+  // If return is undefined, check for other success indicators
+  if (data.return === undefined) {
+    // If we have a request_id, it might still be processing
+    if (data.request_id) {
+      console.log("Warning: data.return is undefined but request_id exists:", data.request_id);
+      // Don't throw error, but log warning - this might still work
+    } else {
+      const errorMessage = data.message
+        ? Array.isArray(data.message)
+          ? data.message.join(", ")
+          : data.message
+        : "Unknown error from Fast2SMS";
+      
+      console.error("Fast2SMS error (no return, no request_id):", errorMessage);
+      throw new Error(`Fast2SMS error: ${errorMessage}`);
+    }
   }
 
+  console.log("=== Fast2SMS Request Successful ===");
   return data;
 }
+
+
+
+
+
+
 
 async function otpRoutes(app) {
   app.post("/request", {
