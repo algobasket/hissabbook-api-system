@@ -24,16 +24,30 @@ async function authRoutes(app) {
             firstName: { type: "string" },
             lastName: { type: "string" },
             phone: { type: "string" },
+            role: { type: "string" }, // Optional role for invite-based registration
           },
         },
       },
     },
     async (request, reply) => {
-      const { email, password, firstName, lastName, phone } = request.body;
+      const { email, password, firstName, lastName, phone, role } = request.body;
       const existing = await findUserByEmail(app.pg, email);
 
       if (existing) {
         return reply.code(409).send({ message: "Email already registered" });
+      }
+
+      // Map invite roles to system roles
+      // "Staff" from invite -> "staff" in system
+      // "Partner" from invite -> "managers" in system (partners are managers)
+      // Default to "managers" if no role provided
+      let userRole = "managers";
+      if (role === "Staff") {
+        userRole = "staff";
+      } else if (role === "Partner") {
+        userRole = "managers"; // Partners are managers in the system
+      } else if (role && ["staff", "agents", "managers", "auditor"].includes(role.toLowerCase())) {
+        userRole = role.toLowerCase();
       }
 
       const user = await createUser(app.pg, {
@@ -42,7 +56,7 @@ async function authRoutes(app) {
         firstName: firstName || null,
         lastName: lastName || null,
         phone,
-        role: "managers", // Default role for regular users (managers are end users)
+        role: userRole,
       });
 
       // Get user roles
@@ -424,12 +438,13 @@ async function authRoutes(app) {
           required: ["email"],
           properties: {
             email: { type: "string", format: "email" },
+            role: { type: "string" }, // Optional role for invite-based registration
           },
         },
       },
     },
     async (request, reply) => {
-      const { email } = request.body;
+      const { email, role } = request.body;
       
       // Check if user already exists
       const existing = await findUserByEmail(app.pg, email);
@@ -465,11 +480,23 @@ async function authRoutes(app) {
         });
       }
 
+      // Map invite roles to system roles
+      // "Staff" from invite -> "staff" in system
+      // "Partner" from invite -> "managers" in system (partners are managers)
+      // Default to "managers" if no role provided
+      let userRole = "managers";
+      if (role === "Staff") {
+        userRole = "staff";
+      } else if (role === "Partner") {
+        userRole = "managers"; // Partners are managers in the system
+      } else if (role && ["staff", "agents", "managers", "auditor"].includes(role.toLowerCase())) {
+        userRole = role.toLowerCase();
+      }
+
       // Create new user (no password required for OTP-based auth)
-      // Default role is "managers" for users created via email OTP (managers are end users)
       const user = await createUser(app.pg, {
         email,
-        role: "managers",
+        role: userRole,
       });
 
       // Get user roles
