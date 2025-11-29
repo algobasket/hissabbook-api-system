@@ -535,12 +535,13 @@ async function authRoutes(app) {
           required: ["phone"],
           properties: {
             phone: { type: "string", minLength: 8 },
+            role: { type: "string" }, // Optional role for invite-based registration
           },
         },
       },
     },
     async (request, reply) => {
-      const { phone } = request.body;
+      const { phone, role } = request.body;
 
       // Format phone number (same logic as in OTP routes)
       let formattedPhone = phone.replace(/\D/g, "");
@@ -584,13 +585,26 @@ async function authRoutes(app) {
         });
       }
 
+      // Map invite roles to system roles
+      // "Staff" from invite -> "staff" in system
+      // "Partner" from invite -> "managers" in system (partners are managers)
+      // Default to "managers" if no role provided
+      let userRole = "managers";
+      if (role === "Staff") {
+        userRole = "staff";
+      } else if (role === "Partner") {
+        userRole = "managers"; // Partners are managers in the system
+      } else if (role && ["staff", "agents", "managers", "auditor"].includes(role.toLowerCase())) {
+        userRole = role.toLowerCase();
+      }
+
       // Create new user with phone (no email required for phone-based auth)
       // Generate a temporary email if not provided
       const tempEmail = `phone_${formattedPhone}@hissabbook.temp`;
       const user = await createUser(app.pg, {
         email: tempEmail,
         phone: formattedPhone,
-        role: "managers", // Default role for phone-based users (managers are end users)
+        role: userRole, // Use role from invite or default to managers
       });
 
       // Get user roles
