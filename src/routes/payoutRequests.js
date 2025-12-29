@@ -1,7 +1,8 @@
 const fs = require("fs/promises");
 const path = require("path");
-const crypto = require("crypto");
+const { uploadProofToR2, deleteFromR2 } = require("../utils/r2Upload");
 
+// Legacy function for backward compatibility (if R2 is not configured)
 async function saveProofToDisk(base64String) {
   if (!base64String) {
     return null;
@@ -15,7 +16,7 @@ async function saveProofToDisk(base64String) {
   const mimeType = matches[1];
   const data = matches[2];
   const buffer = Buffer.from(data, "base64");
-
+  const crypto = require("crypto");
   const extension = mimeType.split("/")[1] || "bin";
   const uniqueId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex");
   const fileName = `payout-${Date.now()}-${uniqueId}.${extension}`;
@@ -24,6 +25,41 @@ async function saveProofToDisk(base64String) {
   const filePath = path.join(uploadDir, fileName);
   await fs.writeFile(filePath, buffer);
   return fileName;
+}
+
+// Upload proof to R2 or fallback to disk
+async function saveProof(base64String) {
+  // Check if R2 is configured
+  const hasR2Config = process.env.R2_ENDPOINT && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY;
+  
+  // Debug logging
+  console.log('=== R2 Upload Check (API System) ===');
+  console.log('R2_ENDPOINT:', process.env.R2_ENDPOINT ? 'SET' : 'NOT SET');
+  console.log('R2_ACCESS_KEY_ID:', process.env.R2_ACCESS_KEY_ID ? 'SET' : 'NOT SET');
+  console.log('R2_SECRET_ACCESS_KEY:', process.env.R2_SECRET_ACCESS_KEY ? 'SET' : 'NOT SET');
+  console.log('R2_BUCKET_NAME:', process.env.R2_BUCKET_NAME || 'hissabbook (default)');
+  console.log('R2_PUBLIC_URL:', process.env.R2_PUBLIC_URL || 'NOT SET');
+  console.log('Has R2 Config:', hasR2Config);
+  
+  if (!hasR2Config) {
+    console.warn('⚠️  R2 not configured - missing environment variables. Using disk storage.');
+    console.warn('Required: R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY');
+    return await saveProofToDisk(base64String);
+  }
+  
+  try {
+    console.log('✅ Attempting to upload proof to R2...');
+    const result = await uploadProofToR2(base64String);
+    console.log('✅ Successfully uploaded to R2:', result.url);
+    // Store the R2 URL in proof_filename column
+    return result.url;
+  } catch (error) {
+    // Log detailed error but fallback to disk storage
+    console.error('❌ Failed to upload to R2, falling back to disk storage');
+    console.error('R2 Error:', error.message);
+    console.error('Error stack:', error.stack);
+    return await saveProofToDisk(base64String);
+  }
 }
 
 const { findUserByEmail } = require("../services/userService");
@@ -84,13 +120,23 @@ async function payoutRequestRoutes(app) {
           return reply.code(404).send({ message: "User not found" });
         }
 
-        const proofFilename = await saveProofToDisk(proof);
+        // Upload proof to R2 (or fallback to disk if R2 not configured)
+        const proofUrlOrFilename = await saveProof(proof);
+        
+        // Log upload details
+        const isR2Url = proofUrlOrFilename && proofUrlOrFilename.startsWith('http');
+        request.log.info({
+          proofUrlOrFilename,
+          storageType: isR2Url ? 'R2' : 'disk',
+          uploaded: true,
+          r2Configured: !!(process.env.R2_ENDPOINT && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY)
+        }, 'Payout proof file uploaded');
 
         const result = await app.pg.query(
           `INSERT INTO public.payout_requests (user_id, amount, utr, remarks, proof_filename, status)
            VALUES ($1, $2, $3, $4, $5, 'pending')
            RETURNING id, status, created_at, proof_filename, amount`,
-          [user.id, amount, utr, remarks, proofFilename],
+          [user.id, amount, utr, remarks, proofUrlOrFilename],
         );
 
         reply.code(201).send({ request: result.rows[0] });
