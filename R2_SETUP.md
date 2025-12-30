@@ -42,3 +42,4 @@ R2_PUBLIC_URL=https://pub-fbbe51b1b6804c88960b6de5aa342581.r2.dev
 ## Note
 
 Both backends share the same R2 bucket and credentials, but they need the environment variables in their respective `.env` files because they run as separate Docker containers.
+
